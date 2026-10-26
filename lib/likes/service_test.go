@@ -160,13 +160,13 @@ func TestServeLikes(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &doc); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	for _, k := range []string{"books", "movies", "anime", "tv"} {
+	for _, k := range []string{"books", "movies", "tv"} {
 		if doc[k] == nil {
 			t.Errorf("key %q missing or null in %s", k, w.Body.String())
 		}
 	}
-	if len(doc) != 4 {
-		t.Errorf("got keys %v, want exactly books, movies, anime, tv", doc)
+	if len(doc) != 3 {
+		t.Errorf("got keys %v, want exactly books, movies, tv", doc)
 	}
 }
 

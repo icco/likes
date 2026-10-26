@@ -311,8 +311,10 @@ func TestGoodreadsError(t *testing.T) {
 const anilistJSON = `{"data":{
   "User":{"mediaListOptions":{"scoreFormat":"POINT_3"}},
   "MediaListCollection":{"lists":[{"entries":[
-    {"score":3,"media":{"id":21087,"siteUrl":"https://anilist.co/anime/21087","seasonYear":2015,"title":{"english":"One Punch Man","romaji":"One Punch Man"}}},
-    {"score":2,"media":{"seasonYear":2019,"title":{"english":"","romaji":"Dororo"}}}
+    {"score":3,"media":{"id":21087,"siteUrl":"https://anilist.co/anime/21087","format":"TV","seasonYear":2015,"title":{"english":"One Punch Man","romaji":"One Punch Man"}}},
+    {"score":3,"media":{"id":110,"siteUrl":"https://anilist.co/anime/110","format":"MOVIE","seasonYear":2012,"title":{"english":"Wolf Children","romaji":"Ookami Kodomo no Ame to Yuki"}}},
+    {"score":3,"media":{"id":44,"siteUrl":"https://anilist.co/anime/44","format":"OVA","seasonYear":1999,"title":{"english":"Trust & Betrayal","romaji":"Tsuioku-hen"}}},
+    {"score":2,"media":{"format":"MOVIE","seasonYear":2019,"title":{"english":"","romaji":"Dororo"}}}
   ]}]}
 }}`
 
@@ -327,16 +329,30 @@ func TestAniList(t *testing.T) {
 
 	c := anilist.NewClient()
 	c.URL = srv.URL
-	src := AniList(c, "alice")
-	if src.Name != "anilist" || src.Kind != likes.Anime {
-		t.Errorf("source = %+v", src)
+	tests := []struct {
+		kind likes.Kind
+		name string
+		want []string
+	}{
+		{likes.Movies, "anilist-movies", []string{"Wolf Children https://anilist.co/anime/110"}},
+		{likes.TV, "anilist-tv", []string{"One Punch Man https://anilist.co/anime/21087", "Trust & Betrayal https://anilist.co/anime/44"}},
 	}
-	items, err := src.Fetch(context.Background())
-	if err != nil {
-		t.Fatalf("Fetch: %v", err)
-	}
-	if len(items) != 1 || items[0].Title != "One Punch Man" || items[0].Year != 2015 || items[0].URL != "https://anilist.co/anime/21087" {
-		t.Errorf("items = %+v, want only the top-scored anime", items)
+	for _, tc := range tests {
+		src := AniList(c, "alice", tc.kind)
+		if src.Name != tc.name || src.Kind != tc.kind {
+			t.Errorf("source = %+v, want %s", src, tc.name)
+		}
+		items, err := src.Fetch(context.Background())
+		if err != nil {
+			t.Fatalf("%s Fetch: %v", tc.name, err)
+		}
+		var got []string
+		for _, it := range items {
+			got = append(got, it.Title+" "+it.URL)
+		}
+		if !slices.Equal(got, tc.want) {
+			t.Errorf("%s items = %v, want %v", tc.name, got, tc.want)
+		}
 	}
 }
 
@@ -346,7 +362,7 @@ func TestAniListError(t *testing.T) {
 	})
 	c := anilist.NewClient()
 	c.URL = srv.URL
-	if _, err := AniList(c, "alice").Fetch(context.Background()); err == nil {
+	if _, err := AniList(c, "alice", likes.Movies).Fetch(context.Background()); err == nil {
 		t.Error("Fetch succeeded, want error")
 	}
 }

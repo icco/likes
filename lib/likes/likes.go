@@ -5,9 +5,11 @@ package likes
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 )
 
 // Kind is the category a source's titles are listed under.
@@ -18,9 +20,6 @@ const Books Kind = "books"
 
 // Movies are listed under "movies".
 const Movies Kind = "movies"
-
-// Anime are listed under "anime".
-const Anime Kind = "anime"
 
 // TV shows are listed under "tv".
 const TV Kind = "tv"
@@ -36,13 +35,32 @@ type Item struct {
 	Date   *time.Time `json:"date,omitempty"`
 }
 
-// key identifies an item across sources: TMDb id when known, otherwise the
+// key is an item's primary identity: its TMDb id when known, otherwise its
 // title and year.
 func (i Item) key() string {
+	return i.keys()[0]
+}
+
+// keys lists every identity an item matches on: its TMDb id when known, then
+// its title and year. A source without TMDb ids, such as AniList, still
+// matches another source's copy by title.
+func (i Item) keys() []string {
+	byTitle := fmt.Sprintf("title:%s:%d", normalizeTitle(i.Title), i.Year)
 	if i.TMDBID > 0 {
-		return fmt.Sprintf("tmdb:%d", i.TMDBID)
+		return []string{fmt.Sprintf("tmdb:%d", i.TMDBID), byTitle}
 	}
-	return fmt.Sprintf("title:%s:%d", strings.ToLower(i.Title), i.Year)
+	return []string{byTitle}
+}
+
+// normalizeTitle lowercases a title and keeps only letters and digits, so
+// "Howl‘s Moving Castle" and "Howl's Moving Castle" match.
+func normalizeTitle(title string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			return unicode.ToLower(r)
+		}
+		return -1
+	}, title)
 }
 
 // Source fetches one site's five-star titles.
@@ -60,12 +78,12 @@ type Source struct {
 type Document struct {
 	Books  []Item `json:"books"`
 	Movies []Item `json:"movies"`
-	Anime  []Item `json:"anime"`
 	TV     []Item `json:"tv"`
 }
 
-// buildDocument groups each source's items by kind, drops duplicates (the
-// earlier source in sources wins), and sorts newest first.
+// buildDocument groups each source's items by kind, drops an item when any of
+// its keys was already seen (the earlier source in sources wins), and sorts
+// newest first.
 func buildDocument(sources []Source, state map[string][]Item) Document {
 	byKind := map[Kind][]Item{}
 	seen := map[Kind]map[string]bool{}
@@ -74,18 +92,19 @@ func buildDocument(sources []Source, state map[string][]Item) Document {
 			seen[src.Kind] = map[string]bool{}
 		}
 		for _, it := range state[src.Name] {
-			k := it.key()
-			if seen[src.Kind][k] {
+			keys := it.keys()
+			if slices.ContainsFunc(keys, func(k string) bool { return seen[src.Kind][k] }) {
 				continue
 			}
-			seen[src.Kind][k] = true
+			for _, k := range keys {
+				seen[src.Kind][k] = true
+			}
 			byKind[src.Kind] = append(byKind[src.Kind], it)
 		}
 	}
 	return Document{
 		Books:  sorted(byKind[Books]),
 		Movies: sorted(byKind[Movies]),
-		Anime:  sorted(byKind[Anime]),
 		TV:     sorted(byKind[TV]),
 	}
 }
