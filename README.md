@@ -1,32 +1,44 @@
-# go-template
+# likes
 
-Template for new Go repos under `github.com/icco`. Config only — no Go source to unpick.
+Serves every five-star book, movie, anime, and TV show from Goodreads, Letterboxd, Trakt, and AniList as one JSON document.
 
-## After creating a repo from this template
+## Install
 
-1. **`go mod init go.icco.me/<repo>`.** Every workflow reads `go-version-file: go.mod`, so CI fails until the module exists.
-2. **Replace `PROJECT_NAME` in `.goreleaser.yaml`** (4 occurrences: `project_name`, `release.github.name`, and twice in the release footer). Left unsubstituted, the first release publishes into a repo that does not exist.
-3. **Check Actions are enabled** — `gh api repos/icco/<repo>/actions/permissions`. They are deliberately disabled on this template so its own workflows never fire; children should inherit the org default of enabled, but confirm once.
-4. **Replace this `README.md`** with the new repo's own. GitHub copies it across verbatim, so a fresh repo otherwise ships a README describing itself as a template.
-5. **Update the `LICENSE` copyright year** if the year has rolled over.
+```sh
+go install go.icco.me/likes@latest
+```
 
-## Choices baked in
+Or run the image:
 
-- **Library by default.** `.goreleaser.yaml` sets `builds: [{skip: true}]` — the release exists for the changelog and the tag `go get` resolves against. For a binary, drop `skip` and add a real `builds:` block; see `icco/etu` for the `homebrew_casks:` pattern that publishes into `icco/homebrew-tap` (it needs a `GH_PAT` secret, since the default `GITHUB_TOKEN` cannot push to another repo).
-- **No docker dependabot ecosystem.** Add it back for a service that ships a `Dockerfile`.
-- **Coverage floor is 80%**, enforced in `test.yml` via `COVERAGE_THRESHOLD`. Lower it deliberately if a repo cannot meet it, rather than deleting the check.
-- **Packages start at `v1.0.0`**, not `v0.1.0`.
+```sh
+docker run -p 8080:8080 -v likes:/data \
+  -e LETTERBOXD_USERNAME=alice -e GOODREADS_USER_ID=12345 \
+  ghcr.io/icco/likes:main
+```
 
-## Why the config looks like this
+## Usage
 
-Each of these is a fix for something that silently misbehaved:
+| Route | Does |
+| --- | --- |
+| `GET /` | Returns `{"books": [], "movies": [], "anime": [], "tv": []}`, newest first, with `ETag` and `Last-Modified`. |
+| `GET /cron` | Refetches every source and saves the state file. Returns 502 if a source failed and 409 if a refresh is already running. |
 
-- **`.golangci.yml` is committed rather than passed as `-E` flags in the workflow.** Inline flags mean a local run and CI enforce different sets, so findings only appear after a push.
-- **`.yamllint` disables `document-start` and `line-length` and sets `truthy: check-keys: false`.** The defaults flag `on:` in every workflow.
-- **`release.yml`'s `major_pattern`/`minor_pattern` are wrapped in `/ /`.** A bare `feat:` is a literal substring match and misses scoped commits like `feat(vertex):`, silently downgrading a minor bump to a patch.
-- **`yaml-json.yml` stages with `file_pattern: '. :!.github/workflows/*'`.** A literal `*.json` pathspec makes `git add` exit 128 in a repo with no JSON. The exclusion stays because the default `GITHUB_TOKEN` cannot edit files under `.github/workflows`.
-- **`pr-title.yml` validates the PR *title*, not commit messages** — `type: subject`, lowercase, no trailing period. Fix a bad title with `gh pr edit --title`, never a force push.
+The server also refreshes once at startup. Run `/cron` from cron, for example `curl -fsS https://likes.example.com/cron` hourly.
 
-## Note on `std-error-handling`
+Each source is enabled by its environment variables:
 
-`.golangci.yml` enables the `std-error-handling` exclusion preset, which suppresses `errcheck` on things like `defer resp.Body.Close()`. It also hides genuine unchecked errors. If you want those surfaced, remove the `exclusions.presets` block and re-run the linter.
+| Variable | Source | Counts as five stars |
+| --- | --- | --- |
+| `LETTERBOXD_USERNAME` | Letterboxd RSS feed (movies) | 5.0 |
+| `TRAKT_USERNAME`, `TRAKT_CLIENT_ID` | Trakt public ratings (movies, TV) | 10/10 |
+| `GOODREADS_USER_ID` | Goodreads "read" shelf RSS (books) | 5 |
+| `ANILIST_USERNAME` | AniList public list (anime) | top of the user's score format |
+
+`PORT` defaults to `8080` and `STATE_FILE` to `state.json` (`/data/state.json` in the image).
+
+## Notes
+
+- Letterboxd blocks scraping the full ratings pages, and its RSS feed holds only the latest diary entries. The Letterboxd source keeps every five-star film it has seen across runs, so history before the first run comes from Trakt.
+- A movie rated on both sites is listed once, keyed on TMDb id, with the Letterboxd entry winning.
+- A source that fails keeps its previous items until it next succeeds.
+- Trakt needs only an API app's client ID for a public profile. Create one at [trakt.tv/oauth/applications](https://trakt.tv/oauth/applications).
