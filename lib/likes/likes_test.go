@@ -1,6 +1,7 @@
 package likes
 
 import (
+	"fmt"
 	"slices"
 	"testing"
 	"time"
@@ -57,8 +58,42 @@ func TestBuildDocument(t *testing.T) {
 	if got := titles(doc.Books); !slices.Equal(got, []string{"A Wizard of Earthsea"}) {
 		t.Errorf("books = %v", got)
 	}
-	if doc.TV == nil || len(doc.TV) != 0 || doc.Anime == nil || len(doc.Anime) != 0 {
-		t.Errorf("empty kinds must be non-nil and empty: tv=%#v anime=%#v", doc.TV, doc.Anime)
+	if doc.TV == nil || len(doc.TV) != 0 {
+		t.Errorf("empty kinds must be non-nil and empty: tv=%#v", doc.TV)
+	}
+}
+
+func TestBuildDocumentMatchesTitleWithoutTMDB(t *testing.T) {
+	sources := []Source{
+		{Name: "trakt-movies", Kind: Movies},
+		{Name: "anilist-movies", Kind: Movies},
+	}
+	state := map[string][]Item{
+		"trakt-movies": {
+			{Title: "Howl's Moving Castle", Year: 2004, TMDBID: 4935, Source: "trakt"},
+		},
+		"anilist-movies": {
+			{Title: "Howl‘s Moving Castle", Year: 2004, Source: "anilist"},
+			{Title: "Howl's Moving Castle", Year: 2005, Source: "anilist"},
+			{Title: "Wolf Children", Year: 2012, Source: "anilist"},
+		},
+	}
+
+	doc := buildDocument(sources, state)
+
+	var got []string
+	for _, it := range doc.Movies {
+		got = append(got, fmt.Sprintf("%s/%d/%s", it.Title, it.Year, it.Source))
+	}
+	want := []string{"Howl's Moving Castle/2004/trakt", "Howl's Moving Castle/2005/anilist", "Wolf Children/2012/anilist"}
+	if !slices.Equal(got, want) {
+		t.Errorf("movies = %v, want %v", got, want)
+	}
+}
+
+func TestNormalizeTitle(t *testing.T) {
+	if got := normalizeTitle("HAIKYU!! The Dumpster Battle"); got != "haikyuthedumpsterbattle" {
+		t.Errorf("normalizeTitle = %q", got)
 	}
 }
 

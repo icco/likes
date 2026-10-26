@@ -1,4 +1,4 @@
-// Package main serves five-star books, movies, anime, and TV shows as JSON,
+// Package main serves five-star books, movies, and TV shows as JSON,
 // refreshed from Letterboxd, Trakt, Goodreads, and AniList by a cron hitting
 // /cron.
 package main
@@ -83,8 +83,9 @@ func getenv(key, fallback string) string {
 	return fallback
 }
 
-// configuredSources returns a source for each account set in the environment,
-// Letterboxd ahead of Trakt so its copy of a movie wins.
+// configuredSources returns a source for each account set in the environment.
+// Order sets which copy of a duplicate wins: Letterboxd, then Trakt, then
+// AniList, which has no TMDb ids.
 func configuredSources(env func(string) string, hc *http.Client) []likes.Source {
 	var out []likes.Source
 	if u := env("LETTERBOXD_USERNAME"); u != "" {
@@ -104,7 +105,8 @@ func configuredSources(env func(string) string, hc *http.Client) []likes.Source 
 		out = append(out, sources.Goodreads(c, id))
 	}
 	if u := env("ANILIST_USERNAME"); u != "" {
-		out = append(out, sources.AniList(anilist.NewClient(), u))
+		ac := anilist.NewClient()
+		out = append(out, sources.AniList(ac, u, likes.Movies), sources.AniList(ac, u, likes.TV))
 	}
 	return out
 }
