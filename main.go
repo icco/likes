@@ -93,6 +93,7 @@ func configuredSources(env func(string) string, hc *http.Client) []likes.Source 
 		out = append(out,
 			sources.Trakt(hc, sources.TraktURL, id, u, likes.Movies),
 			sources.Trakt(hc, sources.TraktURL, id, u, likes.TV),
+			sources.TraktEpisodes(hc, sources.TraktURL, id, u),
 		)
 	}
 	if id := env("GOODREADS_USER_ID"); id != "" {

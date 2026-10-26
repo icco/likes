@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 
@@ -113,6 +114,30 @@ const traktShowsJSON = `[
   {"rated_at":"2014-06-21T18:35:36.000Z","rating":10,"type":"show","show":{"title":"Adventure Time","year":2010,"ids":{"trakt":15195,"slug":"adventure-time","tmdb":15260}}}
 ]`
 
+// traktEpisode renders one episode rating for the show with the given trakt id.
+func traktEpisode(showID int, title string, rating int, ratedAt string) string {
+	return fmt.Sprintf(`{"rated_at":%q,"rating":%d,"type":"episode","show":{"title":%q,"year":2014,"ids":{"trakt":%d,"slug":"show-%d","tmdb":%d}}}`,
+		ratedAt, rating, title, showID, showID, showID*10)
+}
+
+// Broad City averages 9.67 over 3 and Archer exactly 9.5 over 4, so both
+// count. Girls has too few rated episodes and Gossip Girl averages 9.33.
+var traktEpisodesJSON = "[" + strings.Join([]string{
+	traktEpisode(1, "Broad City", 10, "2017-01-01T00:00:00Z"),
+	traktEpisode(1, "Broad City", 10, "2017-12-10T00:00:00Z"),
+	traktEpisode(1, "Broad City", 9, "2017-06-01T00:00:00Z"),
+	traktEpisode(2, "Archer", 10, "2018-01-01T00:00:00Z"),
+	traktEpisode(2, "Archer", 10, "2018-01-02T00:00:00Z"),
+	traktEpisode(2, "Archer", 10, "2018-01-03T00:00:00Z"),
+	traktEpisode(2, "Archer", 8, "2018-01-04T00:00:00Z"),
+	traktEpisode(3, "Girls", 10, "2017-04-19T00:00:00Z"),
+	traktEpisode(3, "Girls", 10, "2017-04-20T00:00:00Z"),
+	traktEpisode(4, "Gossip Girl", 10, "2018-12-01T00:00:00Z"),
+	traktEpisode(4, "Gossip Girl", 9, "2018-12-02T00:00:00Z"),
+	traktEpisode(4, "Gossip Girl", 9, "2018-12-03T00:00:00Z"),
+	`{"rated_at":"2018-12-04T00:00:00Z","rating":10,"type":"episode"}`,
+}, ",") + "]"
+
 func traktServer(t *testing.T) *httptest.Server {
 	t.Helper()
 	return serve(t, func(w http.ResponseWriter, r *http.Request) {
@@ -125,6 +150,8 @@ func traktServer(t *testing.T) *httptest.Server {
 			fmt.Fprint(w, traktMoviesJSON)
 		case "/users/alice/ratings/shows/10":
 			fmt.Fprint(w, traktShowsJSON)
+		case "/users/alice/ratings/episodes":
+			fmt.Fprint(w, traktEpisodesJSON)
 		default:
 			http.NotFound(w, r)
 		}
@@ -168,10 +195,39 @@ func TestTraktShows(t *testing.T) {
 	}
 }
 
+func TestTraktEpisodes(t *testing.T) {
+	srv := traktServer(t)
+	src := TraktEpisodes(srv.Client(), srv.URL, "client-id", "alice")
+	if src.Name != "trakt-episodes" || src.Kind != likes.TV || src.Accumulate {
+		t.Errorf("source = %+v", src)
+	}
+	items, err := src.Fetch(context.Background())
+	if err != nil {
+		t.Fatalf("Fetch: %v", err)
+	}
+	var got []string
+	for _, it := range items {
+		got = append(got, it.Title)
+	}
+	if want := []string{"Broad City", "Archer"}; !slices.Equal(got, want) {
+		t.Fatalf("shows = %v, want %v", got, want)
+	}
+	bc := items[0]
+	if bc.URL != "https://trakt.tv/shows/show-1" || bc.TMDBID != 10 || bc.Source != "trakt" || bc.Year != 2014 {
+		t.Errorf("item = %+v", bc)
+	}
+	if bc.Date == nil || bc.Date.Format("2006-01-02") != "2017-12-10" {
+		t.Errorf("Date = %v, want the newest episode rating, 2017-12-10", bc.Date)
+	}
+}
+
 func TestTraktErrors(t *testing.T) {
 	srv := traktServer(t)
 	if _, err := Trakt(srv.Client(), srv.URL, "wrong-id", "alice", likes.Movies).Fetch(context.Background()); err == nil {
 		t.Error("Fetch with a bad client id succeeded, want error")
+	}
+	if _, err := TraktEpisodes(srv.Client(), srv.URL, "wrong-id", "alice").Fetch(context.Background()); err == nil {
+		t.Error("episodes Fetch with a bad client id succeeded, want error")
 	}
 
 	bad := serve(t, func(w http.ResponseWriter, _ *http.Request) { fmt.Fprint(w, "{") })
