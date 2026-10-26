@@ -247,7 +247,7 @@ func TestGoodreadsError(t *testing.T) {
 const anilistJSON = `{"data":{
   "User":{"mediaListOptions":{"scoreFormat":"POINT_3"}},
   "MediaListCollection":{"lists":[{"entries":[
-    {"score":3,"media":{"seasonYear":2015,"title":{"english":"One Punch Man","romaji":"One Punch Man"}}},
+    {"score":3,"media":{"id":21087,"siteUrl":"https://anilist.co/anime/21087","seasonYear":2015,"title":{"english":"One Punch Man","romaji":"One Punch Man"}}},
     {"score":2,"media":{"seasonYear":2019,"title":{"english":"","romaji":"Dororo"}}}
   ]}]}
 }}`
@@ -271,7 +271,7 @@ func TestAniList(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Fetch: %v", err)
 	}
-	if len(items) != 1 || items[0].Title != "One Punch Man" || items[0].Year != 2015 {
+	if len(items) != 1 || items[0].Title != "One Punch Man" || items[0].Year != 2015 || items[0].URL != "https://anilist.co/anime/21087" {
 		t.Errorf("items = %+v, want only the top-scored anime", items)
 	}
 }

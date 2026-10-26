@@ -25,7 +25,7 @@ func AniList(c *anilist.Client, username string) likes.Source {
 				if e.Score < 10 {
 					continue
 				}
-				items = append(items, likes.Item{Title: e.Title, Year: e.Year, Source: "anilist"})
+				items = append(items, likes.Item{Title: e.Title, Year: e.Year, URL: e.URL, Source: "anilist"})
 			}
 			return items, nil
 		},
