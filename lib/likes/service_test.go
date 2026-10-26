@@ -6,11 +6,11 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+
+	"go.icco.me/likes/lib/dbtest"
 )
 
 // stub is a source whose results the test controls.
@@ -25,66 +25,51 @@ func (s *stub) source(name string, kind Kind, accumulate bool) Source {
 	}}
 }
 
-func TestNewMissingFile(t *testing.T) {
-	svc, err := New(filepath.Join(t.TempDir(), "state.json"), nil)
+func newService(t *testing.T, sources ...Source) *Service {
+	t.Helper()
+	svc, err := New(t.Context(), dbtest.New(t), sources)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	doc, updated := svc.Document()
-	if !updated.IsZero() || len(doc.Books) != 0 || doc.Books == nil {
-		t.Errorf("doc = %+v, updated = %v, want empty", doc, updated)
-	}
+	return svc
 }
 
-func TestNewBadFile(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "state.json")
-	if err := os.WriteFile(path, []byte("{"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := New(path, nil); err == nil {
-		t.Error("New with corrupt state succeeded, want error")
-	}
-	if _, err := New(dir, nil); err == nil {
-		t.Error("New with a directory as state succeeded, want error")
-	}
-}
-
-func TestNewNullSources(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "state.json")
-	if err := os.WriteFile(path, []byte(`{"sources":null}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	svc, err := New(path, nil)
+func TestDocumentEmpty(t *testing.T) {
+	doc, err := newService(t).Document(t.Context())
 	if err != nil {
-		t.Fatalf("New: %v", err)
+		t.Fatalf("Document: %v", err)
 	}
-	if svc.state.Sources == nil {
-		t.Error("Sources is nil after loading null")
+	if doc.Books == nil || len(doc.Books) != 0 {
+		t.Errorf("doc = %+v, want empty", doc)
 	}
 }
 
 func TestRefresh(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "state.json")
-	books := &stub{items: []Item{{Title: "A Wizard of Earthsea", Source: "goodreads"}}}
-	feed := &stub{items: []Item{{Title: "Arrival", TMDBID: 1, Source: "letterboxd"}}}
-	sources := []Source{
+	books := &stub{items: []Item{
+		{Title: "A Wizard of Earthsea", Source: "goodreads"},
+		{Title: "The Dispossessed", Source: "goodreads"},
+	}}
+	feed := &stub{items: []Item{
+		{Title: "Arrival", TMDBID: 1, Source: "letterboxd", URL: "first"},
+		{Title: "Arrival", TMDBID: 1, Source: "letterboxd", URL: "rewatch"},
+	}}
+	svc := newService(t,
 		books.source("goodreads", Books, false),
 		feed.source("letterboxd", Movies, true),
-	}
-
-	svc, err := New(path, sources)
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-	if _, err := svc.Refresh(context.Background()); err != nil {
+	)
+	if _, err := svc.Refresh(t.Context()); err != nil {
 		t.Fatalf("first Refresh: %v", err)
 	}
 
-	// The feed rolls Arrival off, and Goodreads goes down.
+	// Goodreads drops a book, the feed rolls Arrival off, then Goodreads
+	// goes down.
+	books.items = books.items[:1]
 	feed.items = []Item{{Title: "Heat", TMDBID: 2, Source: "letterboxd"}}
+	if _, err := svc.Refresh(t.Context()); err != nil {
+		t.Fatalf("second Refresh: %v", err)
+	}
 	books.items, books.err = nil, errors.New("goodreads is down")
-	results, err := svc.Refresh(context.Background())
+	results, err := svc.Refresh(t.Context())
 	if err == nil || !strings.Contains(err.Error(), "goodreads is down") {
 		t.Fatalf("Refresh error = %v, want the goodreads failure", err)
 	}
@@ -92,89 +77,84 @@ func TestRefresh(t *testing.T) {
 		{Source: "goodreads", Count: 1, Error: "goodreads is down"},
 		{Source: "letterboxd", Count: 2},
 	}
-	if len(results) != len(want) || results[0] != want[0] || results[1] != want[1] {
+	if !slices.Equal(results, want) {
 		t.Errorf("results = %+v, want %+v", results, want)
 	}
 
-	doc, updated := svc.Document()
-	if updated.IsZero() {
-		t.Error("updated is zero after a refresh")
+	doc, err := svc.Document(t.Context())
+	if err != nil {
+		t.Fatalf("Document: %v", err)
 	}
 	if got := titles(doc.Books); !slices.Equal(got, []string{"A Wizard of Earthsea"}) {
-		t.Errorf("books = %v, want the previous fetch kept", got)
+		t.Errorf("books = %v, want the dropped book gone and the rest kept through the outage", got)
 	}
 	if got := titles(doc.Movies); !slices.Equal(got, []string{"Arrival", "Heat"}) {
 		t.Errorf("movies = %v, want the feed accumulated", got)
 	}
-
-	reloaded, err := New(path, sources)
-	if err != nil {
-		t.Fatalf("reload: %v", err)
+	if doc.Movies[0].URL != "first" {
+		t.Errorf("movies[0].URL = %q, want the first of the repeated keys", doc.Movies[0].URL)
 	}
-	if got, _ := reloaded.Document(); !slices.Equal(titles(got.Movies), titles(doc.Movies)) {
-		t.Errorf("reloaded movies = %v, want %v", titles(got.Movies), titles(doc.Movies))
+}
+
+func TestRefreshEmptySource(t *testing.T) {
+	books := &stub{items: []Item{{Title: "A Wizard of Earthsea"}}}
+	svc := newService(t, books.source("goodreads", Books, false))
+	if _, err := svc.Refresh(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	books.items = nil
+	results, err := svc.Refresh(t.Context())
+	if err != nil || results[0].Count != 0 {
+		t.Errorf("results = %+v, err = %v, want an emptied shelf to clear its rows", results, err)
 	}
 }
 
 func TestRefreshBusy(t *testing.T) {
-	svc, err := New(filepath.Join(t.TempDir(), "state.json"), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	svc := newService(t)
 	svc.running.Lock()
 	defer svc.running.Unlock()
-	if _, err := svc.Refresh(context.Background()); !errors.Is(err, ErrBusy) {
+	if _, err := svc.Refresh(t.Context()); !errors.Is(err, ErrBusy) {
 		t.Errorf("Refresh = %v, want ErrBusy", err)
 	}
 }
 
-func TestRefreshSaveFails(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "missing", "state.json")
-	svc, err := New(path, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := svc.Refresh(context.Background()); err == nil {
-		t.Error("Refresh into a missing directory succeeded, want error")
-	}
-}
+func TestDatabaseErrors(t *testing.T) {
+	books := &stub{items: []Item{{Title: "A Wizard of Earthsea"}}}
+	svc := newService(t, books.source("goodreads", Books, false))
 
-func TestRefreshRenameFails(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "state.json")
-	svc, err := New(path, nil)
-	if err != nil {
+	canceled, cancel := context.WithCancel(t.Context())
+	cancel()
+	if _, err := New(canceled, svc.db, nil); err == nil {
+		t.Error("New with a canceled context succeeded, want error")
+	}
+
+	if err := svc.db.Migrator().DropTable(&record{}); err != nil {
 		t.Fatal(err)
 	}
-	// A non-empty directory at the target path makes the rename fail.
-	if err := os.MkdirAll(filepath.Join(path, "child"), 0o750); err != nil {
-		t.Fatal(err)
+	if _, err := svc.Refresh(t.Context()); err == nil {
+		t.Error("Refresh without the items table succeeded, want error")
 	}
-	if _, err := svc.Refresh(context.Background()); err == nil {
-		t.Error("Refresh onto a directory succeeded, want error")
+	if _, err := svc.Document(t.Context()); err == nil {
+		t.Error("Document without the items table succeeded, want error")
+	}
+	w := httptest.NewRecorder()
+	svc.ServeLikes(w, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil))
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("ServeLikes status = %d, want 500", w.Code)
 	}
 }
 
 func TestServeLikes(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "state.json")
 	books := &stub{items: []Item{{Title: "A Wizard of Earthsea", Source: "goodreads"}}}
-	svc, err := New(path, []Source{books.source("goodreads", Books, false)})
-	if err != nil {
+	svc := newService(t, books.source("goodreads", Books, false))
+
+	if _, err := svc.Refresh(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-
 	w := httptest.NewRecorder()
 	svc.ServeLikes(w, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil))
-	if w.Header().Get("Last-Modified") != "" {
-		t.Errorf("Last-Modified set before any refresh: %q", w.Header().Get("Last-Modified"))
-	}
-
-	if _, err := svc.Refresh(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	w = httptest.NewRecorder()
-	svc.ServeLikes(w, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil))
-	if w.Code != http.StatusOK || w.Header().Get("Last-Modified") == "" {
-		t.Errorf("status = %d, Last-Modified = %q", w.Code, w.Header().Get("Last-Modified"))
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d", w.Code)
 	}
 	var doc map[string][]Item
 	if err := json.Unmarshal(w.Body.Bytes(), &doc); err != nil {
@@ -191,12 +171,8 @@ func TestServeLikes(t *testing.T) {
 }
 
 func TestServeCron(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "state.json")
 	books := &stub{items: []Item{{Title: "A Wizard of Earthsea"}}}
-	svc, err := New(path, []Source{books.source("goodreads", Books, false)})
-	if err != nil {
-		t.Fatal(err)
-	}
+	svc := newService(t, books.source("goodreads", Books, false))
 
 	cron := func() *httptest.ResponseRecorder {
 		w := httptest.NewRecorder()

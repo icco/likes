@@ -20,6 +20,9 @@ import (
 	"go.icco.me/likes/lib/likes"
 	"go.icco.me/likes/lib/sources"
 	"go.uber.org/zap"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 const service = "likes"
@@ -30,9 +33,13 @@ func main() {
 	ctx, stop := signal.NotifyContext(logging.NewContext(context.Background(), log), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	svc, err := likes.New(getenv("STATE_FILE", "state.json"), configuredSources(os.Getenv, &http.Client{Timeout: 30 * time.Second}))
+	db, err := openDB(os.Getenv("DATABASE_URL"))
 	if err != nil {
-		log.Fatalw("load state", zap.Error(err))
+		log.Fatalw("open database", zap.Error(err))
+	}
+	svc, err := likes.New(ctx, db, configuredSources(os.Getenv, &http.Client{Timeout: 30 * time.Second}))
+	if err != nil {
+		log.Fatalw("start", zap.Error(err))
 	}
 	go func() {
 		if _, err := svc.Refresh(ctx); err != nil {
@@ -57,6 +64,15 @@ func main() {
 	if err := srv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
 		log.Fatalw("serve", zap.Error(err))
 	}
+}
+
+// openDB connects to Postgres. Queries log nothing themselves; callers log the
+// errors they return.
+func openDB(dsn string) (*gorm.DB, error) {
+	if dsn == "" {
+		return nil, errors.New("DATABASE_URL is required")
+	}
+	return gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
 }
 
 func getenv(key, fallback string) string {

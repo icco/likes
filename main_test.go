@@ -3,9 +3,10 @@ package main
 import (
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
+	"os"
 	"testing"
 
+	"go.icco.me/likes/lib/dbtest"
 	"go.icco.me/likes/lib/likes"
 	"go.uber.org/zap"
 )
@@ -56,8 +57,29 @@ func TestGetenv(t *testing.T) {
 	}
 }
 
+func TestOpenDB(t *testing.T) {
+	if _, err := openDB(""); err == nil {
+		t.Error("openDB with no DSN succeeded, want error")
+	}
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		dsn = dbtest.DefaultDSN
+	}
+	db, err := openDB(dsn)
+	if err != nil {
+		t.Fatalf("openDB: %v", err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sqlDB.Close(); err != nil {
+		t.Error(err)
+	}
+}
+
 func TestRouter(t *testing.T) {
-	svc, err := likes.New(filepath.Join(t.TempDir(), "state.json"), nil)
+	svc, err := likes.New(t.Context(), dbtest.New(t), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,5 +1,5 @@
-// Package likes collects five-star ratings from several sites, persists them
-// to a state file, and serves them as one JSON document.
+// Package likes collects five-star ratings from several sites, stores them in
+// Postgres, and serves them as one JSON document.
 package likes
 
 import (
@@ -47,7 +47,7 @@ func (i Item) key() string {
 
 // Source fetches one site's five-star titles.
 type Source struct {
-	// Name keys the source's items in the state file.
+	// Name keys the source's rows in the database.
 	Name string
 	Kind Kind
 	// Accumulate keeps titles from earlier runs, for feeds that only show
@@ -104,21 +104,5 @@ func sorted(items []Item) []Item {
 		}
 		return strings.ToLower(out[a].Title) < strings.ToLower(out[b].Title)
 	})
-	return out
-}
-
-// union returns fresh plus any old items fresh does not replace.
-func union(old, fresh []Item) []Item {
-	out := append([]Item{}, fresh...)
-	have := make(map[string]bool, len(fresh))
-	for _, it := range fresh {
-		have[it.key()] = true
-	}
-	for _, it := range old {
-		if !have[it.key()] {
-			have[it.key()] = true
-			out = append(out, it)
-		}
-	}
 	return out
 }

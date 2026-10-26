@@ -11,7 +11,8 @@ go install go.icco.me/likes@latest
 Or run the image:
 
 ```sh
-docker run -p 8080:8080 -v likes:/data \
+docker run -p 8080:8080 \
+  -e DATABASE_URL=postgres://alice:secret@db:5432/likes \
   -e LETTERBOXD_USERNAME=alice -e GOODREADS_USER_ID=12345 \
   ghcr.io/icco/likes:main
 ```
@@ -20,8 +21,8 @@ docker run -p 8080:8080 -v likes:/data \
 
 | Route | Does |
 | --- | --- |
-| `GET /` | Returns `{"books": [], "movies": [], "anime": [], "tv": []}`, newest first, with `ETag` and `Last-Modified`. |
-| `GET /cron` | Refetches every source and saves the state file. Returns 502 if a source failed and 409 if a refresh is already running. |
+| `GET /` | Returns `{"books": [], "movies": [], "anime": [], "tv": []}`, newest first, with an `ETag`. |
+| `GET /cron` | Refetches every source and saves the results to Postgres. Returns 502 if a source failed and 409 if a refresh is already running. |
 
 The server also refreshes once at startup. Run `/cron` from cron, for example `curl -fsS https://likes.example.com/cron` hourly.
 
@@ -34,7 +35,7 @@ Each source is enabled by its environment variables:
 | `GOODREADS_USER_ID` | Goodreads "read" shelf RSS (books) | 5 |
 | `ANILIST_USERNAME` | AniList public list (anime) | top of the user's score format |
 
-`PORT` defaults to `8080` and `STATE_FILE` to `state.json` (`/data/state.json` in the image).
+`DATABASE_URL` is required. The server creates its `items` table on startup. `PORT` defaults to `8080`.
 
 ## Notes
 

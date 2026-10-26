@@ -2,28 +2,32 @@ package likes
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
-	"path/filepath"
 	"sync"
 	"time"
 
 	"go.icco.me/gutil/logging"
 	"go.icco.me/gutil/render"
 	"go.uber.org/zap"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // ErrBusy is returned by Refresh while another refresh is running.
 var ErrBusy = errors.New("likes: refresh already running")
 
-// state is what the state file holds: each source's last good fetch.
-type state struct {
-	Sources   map[string][]Item `json:"sources"`
-	UpdatedAt time.Time         `json:"updated_at"`
+// record is an Item stored under the source that fetched it.
+type record struct {
+	Feed      string `gorm:"primaryKey"`
+	ItemKey   string `gorm:"primaryKey"`
+	Item      `gorm:"embedded"`
+	UpdatedAt time.Time
 }
+
+// TableName keeps the table name stable if record is renamed.
+func (record) TableName() string { return "items" }
 
 // Result reports one source's outcome from a refresh.
 type Result struct {
@@ -32,45 +36,33 @@ type Result struct {
 	Error  string `json:"error,omitempty"`
 }
 
-// Service refreshes sources into a state file and serves the merged document.
+// Service refreshes sources into Postgres and serves the merged document.
 type Service struct {
-	path    string
+	db      *gorm.DB
 	sources []Source
 	running sync.Mutex
-
-	mu      sync.RWMutex
-	state   state
-	doc     Document
-	updated time.Time
 }
 
-// New loads the state file at path, if it exists, and returns a Service over
-// sources. Source order sets which duplicate wins.
-func New(path string, sources []Source) (*Service, error) {
-	s := &Service{path: path, sources: sources, state: state{Sources: map[string][]Item{}}}
-	b, err := os.ReadFile(path) //nolint:gosec // path is operator config, not user input
-	switch {
-	case errors.Is(err, os.ErrNotExist):
-	case err != nil:
-		return nil, fmt.Errorf("read state: %w", err)
-	default:
-		if err := json.Unmarshal(b, &s.state); err != nil {
-			return nil, fmt.Errorf("parse state %s: %w", path, err)
-		}
-		if s.state.Sources == nil {
-			s.state.Sources = map[string][]Item{}
-		}
+// New migrates the schema and returns a Service over sources. Source order
+// sets which duplicate wins.
+func New(ctx context.Context, db *gorm.DB, sources []Source) (*Service, error) {
+	if err := db.WithContext(ctx).AutoMigrate(&record{}); err != nil {
+		return nil, fmt.Errorf("migrate: %w", err)
 	}
-	s.doc = buildDocument(sources, s.state.Sources)
-	s.updated = s.state.UpdatedAt
-	return s, nil
+	return &Service{db: db, sources: sources}, nil
 }
 
-// Document returns the current document and when it was last refreshed.
-func (s *Service) Document() (Document, time.Time) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.doc, s.updated
+// Document returns the current document.
+func (s *Service) Document(ctx context.Context) (Document, error) {
+	var rows []record
+	if err := s.db.WithContext(ctx).Order("feed, item_key").Find(&rows).Error; err != nil {
+		return Document{}, fmt.Errorf("load items: %w", err)
+	}
+	byFeed := map[string][]Item{}
+	for _, r := range rows {
+		byFeed[r.Feed] = append(byFeed[r.Feed], r.Item)
+	}
+	return buildDocument(s.sources, byFeed), nil
 }
 
 // Refresh fetches every source and saves the result. A source that fails
@@ -81,70 +73,71 @@ func (s *Service) Refresh(ctx context.Context) ([]Result, error) {
 	}
 	defer s.running.Unlock()
 
-	s.mu.RLock()
-	prev := s.state.Sources
-	s.mu.RUnlock()
-
-	next := state{Sources: make(map[string][]Item, len(s.sources)), UpdatedAt: time.Now().UTC()}
 	results := make([]Result, 0, len(s.sources))
 	var errs []error
 	for _, src := range s.sources {
-		items, err := src.Fetch(ctx)
 		res := Result{Source: src.Name}
-		switch {
-		case err != nil:
+		count, err := s.refreshSource(ctx, src)
+		if err != nil {
 			errs = append(errs, fmt.Errorf("%s: %w", src.Name, err))
 			res.Error = err.Error()
-			items = prev[src.Name]
-		case src.Accumulate:
-			items = union(prev[src.Name], items)
 		}
-		res.Count = len(items)
-		next.Sources[src.Name] = items
+		res.Count = count
 		results = append(results, res)
-	}
-
-	if err := s.save(next); err != nil {
-		return results, errors.Join(append(errs, err)...)
 	}
 	return results, errors.Join(errs...)
 }
 
-// save writes st to the state file atomically, then swaps it in.
-func (s *Service) save(st state) error {
-	b, err := json.MarshalIndent(st, "", "  ")
-	if err != nil {
-		return fmt.Errorf("encode state: %w", err)
-	}
-	f, err := os.CreateTemp(filepath.Dir(s.path), ".state-*.json")
-	if err != nil {
-		return fmt.Errorf("create temp state: %w", err)
-	}
-	defer os.Remove(f.Name())
-	if _, err := f.Write(b); err != nil {
-		return errors.Join(fmt.Errorf("write temp state: %w", err), f.Close())
-	}
-	if err := f.Close(); err != nil {
-		return fmt.Errorf("close temp state: %w", err)
-	}
-	if err := os.Rename(f.Name(), s.path); err != nil {
-		return fmt.Errorf("replace state: %w", err)
-	}
+// refreshSource fetches one source and writes it in a single transaction:
+// replacing its rows, or adding to them for an accumulating source. It
+// returns how many rows the source has afterwards.
+func (s *Service) refreshSource(ctx context.Context, src Source) (int, error) {
+	items, fetchErr := src.Fetch(ctx)
+	var count int64
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if fetchErr == nil {
+			if !src.Accumulate {
+				if err := tx.Where("feed = ?", src.Name).Delete(&record{}).Error; err != nil {
+					return fmt.Errorf("clear: %w", err)
+				}
+			}
+			if rows := records(src.Name, items); len(rows) > 0 {
+				if err := tx.Clauses(clause.OnConflict{UpdateAll: true}).CreateInBatches(rows, 100).Error; err != nil {
+					return fmt.Errorf("save: %w", err)
+				}
+			}
+		}
+		return tx.Model(&record{}).Where("feed = ?", src.Name).Count(&count).Error
+	})
+	return int(count), errors.Join(fetchErr, err)
+}
 
-	doc := buildDocument(s.sources, st.Sources)
-	s.mu.Lock()
-	s.state, s.doc, s.updated = st, doc, st.UpdatedAt
-	s.mu.Unlock()
-	return nil
+// records converts items to rows, dropping repeats of a key so one insert
+// never touches the same row twice.
+func records(feed string, items []Item) []record {
+	seen := map[string]bool{}
+	var out []record
+	for _, it := range items {
+		k := it.key()
+		if seen[k] {
+			continue
+		}
+		seen[k] = true
+		out = append(out, record{Feed: feed, ItemKey: k, Item: it})
+	}
+	return out
 }
 
 // ServeLikes writes the document as JSON.
 func (s *Service) ServeLikes(w http.ResponseWriter, r *http.Request) {
-	doc, updated := s.Document()
-	if !updated.IsZero() {
-		w.Header().Set("Last-Modified", updated.Format(http.TimeFormat))
+	log := logging.FromContext(r.Context())
+	doc, err := s.Document(r.Context())
+	if err != nil {
+		log.Errorw("load document", zap.Error(err))
+		render.JSON(log, w, http.StatusInternalServerError, map[string]string{"error": "could not load likes"})
+		return
 	}
-	render.JSON(logging.FromContext(r.Context()), w, http.StatusOK, doc)
+	render.JSON(log, w, http.StatusOK, doc)
 }
 
 // ServeCron runs a refresh and reports each source's outcome. It answers 409

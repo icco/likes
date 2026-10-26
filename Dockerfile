@@ -16,13 +16,9 @@ LABEL org.opencontainers.image.description="Five-star books, movies, anime, and 
 WORKDIR /app
 
 RUN apk upgrade --no-cache ca-certificates ca-certificates-bundle && apk add --no-cache ca-certificates
-RUN adduser -D -u 1000 appuser && \
-  mkdir -p /data && \
-  chown -R appuser:appuser /data /app
+RUN adduser -D -u 1000 appuser && chown -R appuser:appuser /app
 
 COPY --from=builder /app/likes .
-
-ENV STATE_FILE=/data/state.json
 
 USER appuser
 
