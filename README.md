@@ -31,7 +31,7 @@ Each source is enabled by its environment variables:
 | Variable | Source | Counts as five stars |
 | --- | --- | --- |
 | `LETTERBOXD_USERNAME` | Letterboxd RSS feed (movies) | 5.0 |
-| `TRAKT_USERNAME`, `TRAKT_CLIENT_ID` | Trakt public ratings (movies, TV) | 10/10 |
+| `TRAKT_USERNAME`, `TRAKT_CLIENT_ID` | Trakt public ratings (movies, TV) | 10/10, or for a show, rated episodes averaging 9.5+ over at least 3 |
 | `GOODREADS_USER_ID` | Goodreads "read" shelf RSS (books) | 5 |
 | `ANILIST_USERNAME` | AniList public list (anime) | top of the user's score format |
 
