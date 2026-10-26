@@ -7,6 +7,7 @@ require (
 	go.icco.me/anilist v1.1.0
 	go.icco.me/goodreads v1.0.8
 	go.icco.me/gutil v1.0.36
+	go.icco.me/trakt v1.1.0
 	go.uber.org/zap v1.28.0
 	gorm.io/driver/postgres v1.6.3
 	gorm.io/gorm v1.31.2

@@ -12,6 +12,7 @@ import (
 	"go.icco.me/anilist"
 	"go.icco.me/goodreads"
 	"go.icco.me/likes/lib/likes"
+	"go.icco.me/trakt"
 )
 
 func serve(t *testing.T, h http.HandlerFunc) *httptest.Server {
@@ -138,6 +139,13 @@ var traktEpisodesJSON = "[" + strings.Join([]string{
 	`{"rated_at":"2018-12-04T00:00:00Z","rating":10,"type":"episode"}`,
 }, ",") + "]"
 
+// traktClient returns a trakt client with clientID pointed at srv.
+func traktClient(srv *httptest.Server, clientID string) *trakt.Client {
+	c := trakt.NewClient(clientID, "")
+	c.BaseURL = srv.URL
+	return c
+}
+
 func traktServer(t *testing.T) *httptest.Server {
 	t.Helper()
 	return serve(t, func(w http.ResponseWriter, r *http.Request) {
@@ -160,7 +168,7 @@ func traktServer(t *testing.T) *httptest.Server {
 
 func TestTraktMovies(t *testing.T) {
 	srv := traktServer(t)
-	src := Trakt(srv.Client(), srv.URL, "client-id", "alice", likes.Movies)
+	src := Trakt(traktClient(srv, "client-id"), "alice", likes.Movies)
 	if src.Name != "trakt-movies" || src.Kind != likes.Movies || src.Accumulate {
 		t.Errorf("source = %+v", src)
 	}
@@ -182,7 +190,7 @@ func TestTraktMovies(t *testing.T) {
 
 func TestTraktShows(t *testing.T) {
 	srv := traktServer(t)
-	src := Trakt(srv.Client(), srv.URL, "client-id", "alice", likes.TV)
+	src := Trakt(traktClient(srv, "client-id"), "alice", likes.TV)
 	if src.Name != "trakt-shows" || src.Kind != likes.TV {
 		t.Errorf("source = %+v", src)
 	}
@@ -197,7 +205,7 @@ func TestTraktShows(t *testing.T) {
 
 func TestTraktEpisodes(t *testing.T) {
 	srv := traktServer(t)
-	src := TraktEpisodes(srv.Client(), srv.URL, "client-id", "alice")
+	src := TraktEpisodes(traktClient(srv, "client-id"), "alice")
 	if src.Name != "trakt-episodes" || src.Kind != likes.TV || src.Accumulate {
 		t.Errorf("source = %+v", src)
 	}
@@ -223,15 +231,15 @@ func TestTraktEpisodes(t *testing.T) {
 
 func TestTraktErrors(t *testing.T) {
 	srv := traktServer(t)
-	if _, err := Trakt(srv.Client(), srv.URL, "wrong-id", "alice", likes.Movies).Fetch(context.Background()); err == nil {
+	if _, err := Trakt(traktClient(srv, "wrong-id"), "alice", likes.Movies).Fetch(context.Background()); err == nil {
 		t.Error("Fetch with a bad client id succeeded, want error")
 	}
-	if _, err := TraktEpisodes(srv.Client(), srv.URL, "wrong-id", "alice").Fetch(context.Background()); err == nil {
+	if _, err := TraktEpisodes(traktClient(srv, "wrong-id"), "alice").Fetch(context.Background()); err == nil {
 		t.Error("episodes Fetch with a bad client id succeeded, want error")
 	}
 
 	bad := serve(t, func(w http.ResponseWriter, _ *http.Request) { fmt.Fprint(w, "{") })
-	if _, err := Trakt(bad.Client(), bad.URL, "client-id", "alice", likes.Movies).Fetch(context.Background()); err == nil {
+	if _, err := Trakt(traktClient(bad, "client-id"), "alice", likes.Movies).Fetch(context.Background()); err == nil {
 		t.Error("Fetch of bad json succeeded, want error")
 	}
 }
@@ -344,10 +352,10 @@ func TestAniListError(t *testing.T) {
 }
 
 func TestGetBadURL(t *testing.T) {
-	if _, err := get(context.Background(), http.DefaultClient, "://bad", nil); err == nil {
+	if _, err := get(context.Background(), http.DefaultClient, "://bad"); err == nil {
 		t.Error("get with a bad URL succeeded, want error")
 	}
-	if _, err := get(context.Background(), http.DefaultClient, "http://127.0.0.1:0/", nil); err == nil {
+	if _, err := get(context.Background(), http.DefaultClient, "http://127.0.0.1:0/"); err == nil {
 		t.Error("get with an unreachable host succeeded, want error")
 	}
 }
