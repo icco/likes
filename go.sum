@@ -33,8 +33,8 @@ github.com/stretchr/testify v1.12.1 h1:EuwCh5fleGS7H32xRwO3wRGT7DxrDhLAT6FF8MpWD
 github.com/stretchr/testify v1.12.1/go.mod h1:MDEgiDPPsNp5cuIrHPPCyornHKgEVbtFUmoNlxoYthg=
 github.com/unrolled/render v1.8.1 h1:hUqbfl8e82kD+f39PCDCVcTRUL8lTVUzfxCgxp1FYVY=
 github.com/unrolled/render v1.8.1/go.mod h1:nQ5rv5B38X4Xb3Vtx6tRVle+Vcy0XbcunTkxIWVKmc8=
-go.icco.me/anilist v1.1.0 h1:ckcMELF4mhQjhxtRWAMsOrRdJYm4opLkDrdFSRzCjsc=
-go.icco.me/anilist v1.1.0/go.mod h1:Y7hkLHT3t3P8NXECqseurt2MFhGxfkjdjoRGNkgtorU=
+go.icco.me/anilist v1.2.0 h1:aGvvI7AfAMMNl/wJaX0pfZPI1hEJsyCj2PM7NtHEY60=
+go.icco.me/anilist v1.2.0/go.mod h1:Y7hkLHT3t3P8NXECqseurt2MFhGxfkjdjoRGNkgtorU=
 go.icco.me/goodreads v1.0.8 h1:bD5PRPCI4LtZMY2b8gBBMg0rZphOdkvql938E5eiutU=
 go.icco.me/goodreads v1.0.8/go.mod h1:vgsN78ysQI/gAwJc1tWYLMbA9bQVMu0jTyvGsuHAJcc=
 go.icco.me/gutil v1.0.36 h1:xD15Km9aZD1uuAdmy7NKpZcp0Pkm6PRT/KQ4ucfTClU=
