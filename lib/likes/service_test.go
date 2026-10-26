@@ -35,12 +35,12 @@ func newService(t *testing.T, sources ...Source) *Service {
 }
 
 func TestDocumentEmpty(t *testing.T) {
-	doc, updated, err := newService(t).Document(t.Context())
+	doc, err := newService(t).Document(t.Context())
 	if err != nil {
 		t.Fatalf("Document: %v", err)
 	}
-	if !updated.IsZero() || doc.Books == nil || len(doc.Books) != 0 {
-		t.Errorf("doc = %+v, updated = %v, want empty", doc, updated)
+	if doc.Books == nil || len(doc.Books) != 0 {
+		t.Errorf("doc = %+v, want empty", doc)
 	}
 }
 
@@ -81,12 +81,9 @@ func TestRefresh(t *testing.T) {
 		t.Errorf("results = %+v, want %+v", results, want)
 	}
 
-	doc, updated, err := svc.Document(t.Context())
+	doc, err := svc.Document(t.Context())
 	if err != nil {
 		t.Fatalf("Document: %v", err)
-	}
-	if updated.IsZero() {
-		t.Error("updated is zero after a refresh")
 	}
 	if got := titles(doc.Books); !slices.Equal(got, []string{"A Wizard of Earthsea"}) {
 		t.Errorf("books = %v, want the dropped book gone and the rest kept through the outage", got)
@@ -137,7 +134,7 @@ func TestDatabaseErrors(t *testing.T) {
 	if _, err := svc.Refresh(t.Context()); err == nil {
 		t.Error("Refresh without the items table succeeded, want error")
 	}
-	if _, _, err := svc.Document(t.Context()); err == nil {
+	if _, err := svc.Document(t.Context()); err == nil {
 		t.Error("Document without the items table succeeded, want error")
 	}
 	w := httptest.NewRecorder()
@@ -151,19 +148,13 @@ func TestServeLikes(t *testing.T) {
 	books := &stub{items: []Item{{Title: "A Wizard of Earthsea", Source: "goodreads"}}}
 	svc := newService(t, books.source("goodreads", Books, false))
 
-	w := httptest.NewRecorder()
-	svc.ServeLikes(w, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil))
-	if w.Header().Get("Last-Modified") != "" {
-		t.Errorf("Last-Modified set before any refresh: %q", w.Header().Get("Last-Modified"))
-	}
-
 	if _, err := svc.Refresh(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	w = httptest.NewRecorder()
+	w := httptest.NewRecorder()
 	svc.ServeLikes(w, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil))
-	if w.Code != http.StatusOK || w.Header().Get("Last-Modified") == "" {
-		t.Errorf("status = %d, Last-Modified = %q", w.Code, w.Header().Get("Last-Modified"))
+	if w.Code != http.StatusOK {
+		t.Errorf("status = %d", w.Code)
 	}
 	var doc map[string][]Item
 	if err := json.Unmarshal(w.Body.Bytes(), &doc); err != nil {

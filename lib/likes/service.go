@@ -52,21 +52,17 @@ func New(ctx context.Context, db *gorm.DB, sources []Source) (*Service, error) {
 	return &Service{db: db, sources: sources}, nil
 }
 
-// Document returns the current document and when it last changed.
-func (s *Service) Document(ctx context.Context) (Document, time.Time, error) {
+// Document returns the current document.
+func (s *Service) Document(ctx context.Context) (Document, error) {
 	var rows []record
 	if err := s.db.WithContext(ctx).Order("feed, item_key").Find(&rows).Error; err != nil {
-		return Document{}, time.Time{}, fmt.Errorf("load items: %w", err)
+		return Document{}, fmt.Errorf("load items: %w", err)
 	}
 	byFeed := map[string][]Item{}
-	var updated time.Time
 	for _, r := range rows {
 		byFeed[r.Feed] = append(byFeed[r.Feed], r.Item)
-		if r.UpdatedAt.After(updated) {
-			updated = r.UpdatedAt
-		}
 	}
-	return buildDocument(s.sources, byFeed), updated, nil
+	return buildDocument(s.sources, byFeed), nil
 }
 
 // Refresh fetches every source and saves the result. A source that fails
@@ -135,14 +131,11 @@ func records(feed string, items []Item) []record {
 // ServeLikes writes the document as JSON.
 func (s *Service) ServeLikes(w http.ResponseWriter, r *http.Request) {
 	log := logging.FromContext(r.Context())
-	doc, updated, err := s.Document(r.Context())
+	doc, err := s.Document(r.Context())
 	if err != nil {
 		log.Errorw("load document", zap.Error(err))
 		render.JSON(log, w, http.StatusInternalServerError, map[string]string{"error": "could not load likes"})
 		return
-	}
-	if !updated.IsZero() {
-		w.Header().Set("Last-Modified", updated.UTC().Format(http.TimeFormat))
 	}
 	render.JSON(log, w, http.StatusOK, doc)
 }

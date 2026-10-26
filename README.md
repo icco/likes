@@ -21,7 +21,7 @@ docker run -p 8080:8080 \
 
 | Route | Does |
 | --- | --- |
-| `GET /` | Returns `{"books": [], "movies": [], "anime": [], "tv": []}`, newest first, with `ETag` and `Last-Modified`. |
+| `GET /` | Returns `{"books": [], "movies": [], "anime": [], "tv": []}`, newest first, with an `ETag`. |
 | `GET /cron` | Refetches every source and saves the results to Postgres. Returns 502 if a source failed and 409 if a refresh is already running. |
 
 The server also refreshes once at startup. Run `/cron` from cron, for example `curl -fsS https://likes.example.com/cron` hourly.
