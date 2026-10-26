@@ -18,6 +18,8 @@ jobs:
         run: go build -v ./...
       - name: Test with coverage
         run: go test -v -race -coverprofile=coverage.out ./...
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/likes_test?sslmode=disable
       - name: Enforce coverage threshold
         run: |
           total=$(go tool cover -func=coverage.out | awk '/^total:/ {print $3}' | tr -d '%')
@@ -27,3 +29,12 @@ jobs:
               echo "::error::coverage ${total}% is below threshold ${COVERAGE_THRESHOLD}%"
               exit 1
             }
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: likes_test
+        options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+        ports:
+          - 5432:5432

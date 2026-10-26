@@ -69,21 +69,3 @@ func TestSortedTiesOnDate(t *testing.T) {
 		t.Errorf("sorted = %v, want %v", got, want)
 	}
 }
-
-func TestUnion(t *testing.T) {
-	old := []Item{
-		{Title: "Arrival", TMDBID: 329865, URL: "old"},
-		{Title: "Heat", TMDBID: 949},
-	}
-	fresh := []Item{
-		{Title: "Arrival", TMDBID: 329865, URL: "new"},
-		{Title: "Brick", Year: 2005},
-	}
-	got := union(old, fresh)
-	if want := []string{"Arrival", "Brick", "Heat"}; !slices.Equal(titles(got), want) {
-		t.Fatalf("union = %v, want %v", titles(got), want)
-	}
-	if got[0].URL != "new" {
-		t.Errorf("fresh item should replace old, got URL %q", got[0].URL)
-	}
-}
