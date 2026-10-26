@@ -122,8 +122,7 @@ func (s *Service) save(st state) error {
 	}
 	defer os.Remove(f.Name())
 	if _, err := f.Write(b); err != nil {
-		f.Close()
-		return fmt.Errorf("write temp state: %w", err)
+		return errors.Join(fmt.Errorf("write temp state: %w", err), f.Close())
 	}
 	if err := f.Close(); err != nil {
 		return fmt.Errorf("close temp state: %w", err)
