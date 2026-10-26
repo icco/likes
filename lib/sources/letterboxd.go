@@ -41,7 +41,7 @@ func Letterboxd(hc *http.Client, baseURL, username string) likes.Source {
 		Kind:       likes.Movies,
 		Accumulate: true,
 		Fetch: func(ctx context.Context) ([]likes.Item, error) {
-			body, err := get(ctx, hc, fmt.Sprintf("%s/%s/rss/", baseURL, url.PathEscape(username)), nil)
+			body, err := get(ctx, hc, fmt.Sprintf("%s/%s/rss/", baseURL, url.PathEscape(username)))
 			if err != nil {
 				return nil, err
 			}
@@ -70,15 +70,12 @@ func Letterboxd(hc *http.Client, baseURL, username string) likes.Source {
 	}
 }
 
-// get fetches rawURL with the given extra headers and returns the body,
-// treating any non-200 status as an error.
-func get(ctx context.Context, hc *http.Client, rawURL string, header http.Header) ([]byte, error) {
+// get fetches rawURL and returns the body, treating any non-200 status as an
+// error.
+func get(ctx context.Context, hc *http.Client, rawURL string) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("build request: %w", err)
-	}
-	for k, v := range header {
-		req.Header[k] = v
 	}
 	req.Header.Set("User-Agent", userAgent)
 	resp, err := hc.Do(req)

@@ -19,6 +19,7 @@ import (
 	"go.icco.me/gutil/logging"
 	"go.icco.me/likes/lib/likes"
 	"go.icco.me/likes/lib/sources"
+	"go.icco.me/trakt"
 	"go.uber.org/zap"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -90,10 +91,11 @@ func configuredSources(env func(string) string, hc *http.Client) []likes.Source 
 		out = append(out, sources.Letterboxd(hc, sources.LetterboxdURL, u))
 	}
 	if u, id := env("TRAKT_USERNAME"), env("TRAKT_CLIENT_ID"); u != "" && id != "" {
+		tc := trakt.NewClient(id, "")
 		out = append(out,
-			sources.Trakt(hc, sources.TraktURL, id, u, likes.Movies),
-			sources.Trakt(hc, sources.TraktURL, id, u, likes.TV),
-			sources.TraktEpisodes(hc, sources.TraktURL, id, u),
+			sources.Trakt(tc, u, likes.Movies),
+			sources.Trakt(tc, u, likes.TV),
+			sources.TraktEpisodes(tc, u),
 		)
 	}
 	if id := env("GOODREADS_USER_ID"); id != "" {
