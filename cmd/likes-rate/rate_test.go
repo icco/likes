@@ -6,8 +6,9 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
+
+	tea "charm.land/bubbletea/v2"
 )
 
 func TestCandidatesAndPrompt(t *testing.T) {
@@ -56,12 +57,26 @@ func TestCandidatesAndPrompt(t *testing.T) {
 	}
 
 	var skips []int
-	n, err := prompt(ctx, a, cs, strings.NewReader("11\n10\ns\n"), io.Discard, func(c candidate) error {
+	var m tea.Model = newModel(ctx, a, cs, func(c candidate) error {
 		skips = append(skips, skipKey(c.Kind, c.Media.IDs.Trakt))
 		return nil
 	})
-	if err != nil || n != 1 {
-		t.Fatalf("prompt = %d, %v", n, err)
+	press := func(text string) tea.Cmd {
+		var cmd tea.Cmd
+		m, cmd = m.Update(tea.KeyPressMsg{Text: text, Code: rune(text[0])})
+		return cmd
+	}
+	if cmd := press("0"); cmd == nil {
+		t.Fatal("rating key returned no command")
+	} else {
+		m, _ = m.Update(cmd())
+	}
+	if got := m.(model); got.i != 1 || got.rated != 1 {
+		t.Fatalf("after rating: i=%d rated=%d", got.i, got.rated)
+	}
+	press("s")
+	if got := m.(model); !got.done() || got.rated != 1 {
+		t.Fatalf("after skip: %+v", got)
 	}
 	if len(skips) != 1 || skips[0] != 2 {
 		t.Errorf("skips = %v", skips)

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -9,8 +8,6 @@ import (
 	"io"
 	"net/http"
 	"sort"
-	"strconv"
-	"strings"
 	"time"
 )
 
@@ -137,43 +134,4 @@ func skipKey(kind string, id int) int {
 		return -id
 	}
 	return id
-}
-
-func prompt(ctx context.Context, a api, cs []candidate, in io.Reader, out io.Writer, onSkip func(candidate) error) (rated int, err error) {
-	sc := bufio.NewScanner(in)
-	for i, c := range cs {
-		label := "Movie"
-		if c.Kind == "shows" {
-			label = "Show"
-		}
-		for {
-			fmt.Fprintf(out, "[%d/%d] %s: %s (%d), watched %s\n  https://trakt.tv/%s/%s\n  rating 1-10, s=skip, enter=later, q=quit > ",
-				i+1, len(cs), label, c.Media.Title, c.Media.Year, c.Watched.Format(time.DateOnly), c.Kind, c.Media.IDs.Slug)
-			if !sc.Scan() {
-				return rated, sc.Err()
-			}
-			ans := strings.TrimSpace(strings.ToLower(sc.Text()))
-			switch ans {
-			case "q":
-				return rated, nil
-			case "":
-			case "s":
-				if err := onSkip(c); err != nil {
-					return rated, err
-				}
-			default:
-				n, convErr := strconv.Atoi(ans)
-				if convErr != nil || n < 1 || n > 10 {
-					fmt.Fprintln(out, "  enter 1-10, s, q, or nothing")
-					continue
-				}
-				if err := a.rate(ctx, c, n); err != nil {
-					return rated, err
-				}
-				rated++
-			}
-			break
-		}
-	}
-	return rated, nil
 }
