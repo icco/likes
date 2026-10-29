@@ -18,16 +18,24 @@ func TestCandidatesAndPrompt(t *testing.T) {
 		}
 		switch r.URL.Path {
 		case "/sync/ratings/movies":
-			io.WriteString(w, `[{"movie":{"title":"Rated","ids":{"trakt":1}}}]`)
+			if _, err := io.WriteString(w, `[{"movie":{"title":"Rated","ids":{"trakt":1}}]`); err != nil {
+				t.Fatal(err)
+			}
 		case "/sync/ratings/shows":
-			io.WriteString(w, `[]`)
+			if _, err := io.WriteString(w, `[]`); err != nil {
+				t.Fatal(err)
+			}
 		case "/sync/watched/movies":
-			io.WriteString(w, `[
-				{"last_watched_at":"2020-01-01T00:00:00Z","movie":{"title":"Rated","year":2000,"ids":{"trakt":1}}},
-				{"last_watched_at":"2021-01-01T00:00:00Z","movie":{"title":"Old","year":2001,"ids":{"trakt":2}}},
-				{"last_watched_at":"2023-01-01T00:00:00Z","movie":{"title":"Skipped","year":2002,"ids":{"trakt":3}}}]`)
+			if _, err := io.WriteString(w, `[
+			{"last_watched_at":"2020-01-01T00:00:00Z","movie":{"title":"Rated","year":2000,"ids":{"trakt":1}}},
+			{"last_watched_at":"2021-01-01T00:00:00Z","movie":{"title":"Old","year":2001,"ids":{"trakt":2}}},
+			{"last_watched_at":"2023-01-01T00:00:00Z","movie":{"title":"Skipped","year":2002,"ids":{"trakt":3}}}]`); err != nil {
+				t.Fatal(err)
+			}
 		case "/sync/watched/shows":
-			io.WriteString(w, `[{"last_watched_at":"2022-01-01T00:00:00Z","show":{"title":"Show","year":2010,"ids":{"trakt":2}}}]`)
+			if _, err := io.WriteString(w, `[{"last_watched_at":"2022-01-01T00:00:00Z","show":{"title":"Show","year":2010,"ids":{"trakt":2}}}]`); err != nil {
+				t.Fatal(err)
+			}
 		case "/sync/ratings":
 			b, _ := io.ReadAll(r.Body)
 			posted = append(posted, string(b))

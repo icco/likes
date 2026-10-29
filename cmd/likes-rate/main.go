@@ -110,7 +110,8 @@ func ensureToken(ctx context.Context, tc *trakt.Client, st *state) error {
 
 func load(path string) (state, error) {
 	var st state
-	data, err := os.ReadFile(path)
+	cleanPath := filepath.Clean(path)
+	data, err := os.ReadFile(cleanPath) // #nosec G304
 	if errors.Is(err, os.ErrNotExist) {
 		return st, nil
 	}
