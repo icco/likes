@@ -18,7 +18,7 @@ func TestCandidatesAndPrompt(t *testing.T) {
 		}
 		switch r.URL.Path {
 		case "/sync/ratings/movies":
-			if _, err := io.WriteString(w, `[{"movie":{"title":"Rated","ids":{"trakt":1}}]`); err != nil {
+			if _, err := io.WriteString(w, `[{"movie":{"title":"Rated","ids":{"trakt":1}}}]`); err != nil {
 				t.Fatal(err)
 			}
 		case "/sync/ratings/shows":
