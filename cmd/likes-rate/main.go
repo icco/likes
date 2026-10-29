@@ -64,8 +64,8 @@ func run() error {
 		return err
 	}
 	if len(cs) == 0 {
-		lipgloss.Println("Nothing left to rate.")
-		return nil
+		_, err := lipgloss.Println("Nothing left to rate.")
+		return err
 	}
 	final, err := tea.NewProgram(newModel(ctx, a, cs, func(c candidate) error {
 		st.Skipped = append(st.Skipped, skipKey(c.Kind, c.Media.IDs.Trakt))
@@ -75,7 +75,9 @@ func run() error {
 		return err
 	}
 	m := final.(model)
-	lipgloss.Println(m.summary())
+	if _, err := lipgloss.Println(m.summary()); err != nil {
+		return err
+	}
 	return m.err
 }
 
