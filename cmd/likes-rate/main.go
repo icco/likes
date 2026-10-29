@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"go.icco.me/trakt"
 )
 
@@ -62,15 +64,19 @@ func run() error {
 		return err
 	}
 	if len(cs) == 0 {
-		fmt.Println("Nothing left to rate.")
+		lipgloss.Println("Nothing left to rate.")
 		return nil
 	}
-	n, err := prompt(ctx, a, cs, os.Stdin, os.Stdout, func(c candidate) error {
+	final, err := tea.NewProgram(newModel(ctx, a, cs, func(c candidate) error {
 		st.Skipped = append(st.Skipped, skipKey(c.Kind, c.Media.IDs.Trakt))
 		return save(path, st)
-	})
-	fmt.Printf("\nRated %d titles.\n", n)
-	return err
+	}), tea.WithContext(ctx), tea.WithInput(os.Stdin), tea.WithOutput(os.Stdout)).Run()
+	if err != nil {
+		return err
+	}
+	m := final.(model)
+	lipgloss.Println(m.summary())
+	return m.err
 }
 
 func ensureToken(ctx context.Context, tc *trakt.Client, st *state) error {

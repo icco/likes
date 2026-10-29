@@ -313,7 +313,7 @@ func TestRun(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			input, err := os.CreateTemp(dir, "input")
+			input, w, err := os.Pipe()
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -322,10 +322,10 @@ func TestRun(t *testing.T) {
 					t.Error(err)
 				}
 			})
-			if _, err := input.WriteString(tt.input); err != nil {
+			if _, err := w.WriteString(tt.input); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := input.Seek(0, io.SeekStart); err != nil {
+			if err := w.Close(); err != nil {
 				t.Fatal(err)
 			}
 			oldStdin := os.Stdin
