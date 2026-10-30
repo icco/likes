@@ -22,10 +22,9 @@ func TestConfiguredSources(t *testing.T) {
 				"LETTERBOXD_USERNAME": "alice",
 				"TRAKT_USERNAME":      "alice",
 				"TRAKT_CLIENT_ID":     "client-id",
-				"GOODREADS_USER_ID":   "12345",
 				"ANILIST_USERNAME":    "alice",
 			},
-			want: []string{"letterboxd", "trakt-movies", "trakt-shows", "trakt-episodes", "goodreads", "anilist-movies", "anilist-tv"},
+			want: []string{"letterboxd", "trakt-movies", "trakt-shows", "trakt-episodes", "anilist-movies", "anilist-tv"},
 		},
 		"trakt without client id": {
 			env:  map[string]string{"TRAKT_USERNAME": "alice"},

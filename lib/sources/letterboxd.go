@@ -1,5 +1,4 @@
-// Package sources fetches five-star titles from Letterboxd, Trakt, Goodreads,
-// and AniList.
+// Package sources fetches five-star titles from Letterboxd, Trakt, and AniList.
 package sources
 
 import (

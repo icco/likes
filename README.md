@@ -1,6 +1,6 @@
 # likes
 
-Serves every five-star book, movie, and TV show, anime included, from Goodreads, Letterboxd, Trakt, and AniList as one JSON document.
+Serves every five-star movie and TV show, anime included, from Letterboxd, Trakt, and AniList as one JSON document.
 
 ## Install
 
@@ -13,7 +13,7 @@ Or run the image:
 ```sh
 docker run -p 8080:8080 \
   -e DATABASE_URL=postgres://alice:secret@db:5432/likes \
-  -e LETTERBOXD_USERNAME=alice -e GOODREADS_USER_ID=12345 \
+  -e LETTERBOXD_USERNAME=alice \
   ghcr.io/icco/likes:main
 ```
 
@@ -32,7 +32,6 @@ Each source is enabled by its environment variables:
 | --- | --- | --- |
 | `LETTERBOXD_USERNAME` | Letterboxd RSS feed (movies) | 5.0 |
 | `TRAKT_USERNAME`, `TRAKT_CLIENT_ID` | Trakt public ratings (movies, TV) | 10/10, or for a show, rated episodes averaging 9.5+ over at least 3 |
-| `GOODREADS_USER_ID` | Goodreads "read" shelf RSS (books) | 5 |
 | `ANILIST_USERNAME` | AniList public list (anime films under movies, everything else under TV) | top of the user's score format |
 
 `DATABASE_URL` is required. The server creates its `items` table on startup. `PORT` defaults to `8080`.
