@@ -1,5 +1,5 @@
 // Package main serves five-star books, movies, and TV shows as JSON,
-// refreshed from Letterboxd, Trakt, Goodreads, and AniList by a cron hitting
+// refreshed from Letterboxd, Trakt, and AniList by a cron hitting
 // /cron.
 package main
 
@@ -14,7 +14,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"go.icco.me/anilist"
-	"go.icco.me/goodreads"
 	"go.icco.me/gutil/etag"
 	"go.icco.me/gutil/logging"
 	"go.icco.me/likes/lib/likes"
@@ -98,11 +97,6 @@ func configuredSources(env func(string) string, hc *http.Client) []likes.Source 
 			sources.Trakt(tc, u, likes.TV),
 			sources.TraktEpisodes(tc, u),
 		)
-	}
-	if id := env("GOODREADS_USER_ID"); id != "" {
-		c := goodreads.NewClient()
-		c.SetHTTPClient(hc)
-		out = append(out, sources.Goodreads(c, id))
 	}
 	if u := env("ANILIST_USERNAME"); u != "" {
 		ac := anilist.NewClient()

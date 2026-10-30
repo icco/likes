@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"go.icco.me/anilist"
-	"go.icco.me/goodreads"
 	"go.icco.me/likes/lib/likes"
 	"go.icco.me/trakt"
 )
@@ -241,70 +240,6 @@ func TestTraktErrors(t *testing.T) {
 	bad := serve(t, func(w http.ResponseWriter, _ *http.Request) { fmt.Fprint(w, "{") })
 	if _, err := Trakt(traktClient(bad, "client-id"), "alice", likes.Movies).Fetch(context.Background()); err == nil {
 		t.Error("Fetch of bad json succeeded, want error")
-	}
-}
-
-func goodreadsFeed(items ...string) string {
-	return `<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel>` + strings.Join(items, "") + `</channel></rss>`
-}
-
-func goodreadsItem(id, title string, rating int) string {
-	return fmt.Sprintf(`<item>
-  <book_id>%s</book_id>
-  <title><![CDATA[%s]]></title>
-  <author_name>Ursula K. Le Guin</author_name>
-  <user_rating>%d</user_rating>
-  <book_published>1968</book_published>
-  <user_read_at><![CDATA[Mon, 27 Jul 2026 00:00:00 +0000]]></user_read_at>
-</item>`, id, title, rating)
-}
-
-func TestGoodreads(t *testing.T) {
-	srv := serve(t, func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/review/list_rss/12345" || r.URL.Query().Get("shelf") != goodreads.ShelfRead {
-			http.NotFound(w, r)
-			return
-		}
-		if r.URL.Query().Get("page") != "1" {
-			fmt.Fprint(w, goodreadsFeed())
-			return
-		}
-		fmt.Fprint(w, goodreadsFeed(
-			goodreadsItem("807968", "A Wizard of Earthsea", 5),
-			goodreadsItem("13651", "The Dispossessed", 4),
-			goodreadsItem("18423", "The Left Hand of Darkness", 0),
-		))
-	})
-
-	c := goodreads.NewClient()
-	c.URL = srv.URL
-	c.SetHTTPClient(srv.Client())
-	src := Goodreads(c, "12345")
-	if src.Name != "goodreads" || src.Kind != likes.Books {
-		t.Errorf("source = %+v", src)
-	}
-	items, err := src.Fetch(context.Background())
-	if err != nil {
-		t.Fatalf("Fetch: %v", err)
-	}
-	if len(items) != 1 {
-		t.Fatalf("got %d items, want only the five-star book: %+v", len(items), items)
-	}
-	got := items[0]
-	if got.Title != "A Wizard of Earthsea" || got.Author != "Ursula K. Le Guin" || got.Year != 1968 {
-		t.Errorf("item = %+v", got)
-	}
-	if got.URL != "https://www.goodreads.com/book/show/807968" || got.Date == nil {
-		t.Errorf("URL = %q, Date = %v", got.URL, got.Date)
-	}
-}
-
-func TestGoodreadsError(t *testing.T) {
-	srv := serve(t, func(w http.ResponseWriter, r *http.Request) { http.NotFound(w, r) })
-	c := goodreads.NewClient()
-	c.URL = srv.URL
-	if _, err := Goodreads(c, "12345").Fetch(context.Background()); err == nil {
-		t.Error("Fetch succeeded, want error")
 	}
 }
 
