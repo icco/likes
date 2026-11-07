@@ -38,9 +38,10 @@ type Result struct {
 
 // Service refreshes sources into Postgres and serves the merged document.
 type Service struct {
-	db      *gorm.DB
-	sources []Source
-	running sync.Mutex
+	db         *gorm.DB
+	sources    []Source
+	running    sync.Mutex
+	background sync.WaitGroup
 }
 
 // New migrates the schema and returns a Service over sources. Source order
@@ -140,18 +141,24 @@ func (s *Service) ServeLikes(w http.ResponseWriter, r *http.Request) {
 	render.JSON(log, w, http.StatusOK, doc)
 }
 
-// ServeCron runs a refresh and reports each source's outcome. It answers 409
-// while a refresh is already running and 502 when any source failed.
+// ServeCron starts a refresh in the background and answers 200 at once.
+// Source failures, such as AniList rate limits, are logged rather than
+// returned.
 func (s *Service) ServeCron(w http.ResponseWriter, r *http.Request) {
 	log := logging.FromContext(r.Context())
-	results, err := s.Refresh(r.Context())
-	status := http.StatusOK
-	switch {
-	case errors.Is(err, ErrBusy):
-		status = http.StatusConflict
-	case err != nil:
-		log.Warnw("refresh failed", zap.Error(err))
-		status = http.StatusBadGateway
-	}
-	render.JSON(log, w, status, map[string]any{"results": results})
+	ctx := context.WithoutCancel(r.Context())
+	s.background.Go(func() {
+		results, err := s.Refresh(ctx)
+		if errors.Is(err, ErrBusy) {
+			log.Infow("refresh already running")
+			return
+		}
+		for _, res := range results {
+			if res.Error != "" {
+				log.Warnw("refresh source failed", "source", res.Source, "error", res.Error)
+			}
+		}
+		log.Infow("refresh done", "results", results)
+	})
+	render.JSON(log, w, http.StatusOK, map[string]string{"status": "refreshing"})
 }

@@ -10,7 +10,10 @@ import (
 	"strings"
 	"testing"
 
+	"go.icco.me/gutil/logging"
 	"go.icco.me/likes/lib/dbtest"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 )
 
 // stub is a source whose results the test controls.
@@ -174,24 +177,33 @@ func TestServeCron(t *testing.T) {
 	books := &stub{items: []Item{{Title: "A Wizard of Earthsea"}}}
 	svc := newService(t, books.source("goodreads", Books, false))
 
-	cron := func() *httptest.ResponseRecorder {
+	core, logs := observer.New(zap.InfoLevel)
+	ctx := logging.NewContext(t.Context(), zap.New(core).Sugar())
+	cron := func(name string) {
+		t.Helper()
 		w := httptest.NewRecorder()
-		svc.ServeCron(w, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/cron", nil))
-		return w
+		svc.ServeCron(w, httptest.NewRequestWithContext(ctx, http.MethodGet, "/cron", nil))
+		if w.Code != http.StatusOK {
+			t.Errorf("%s: status = %d, want 200", name, w.Code)
+		}
+		svc.background.Wait()
 	}
 
-	if w := cron(); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"count": 1`) {
-		t.Errorf("ok: status = %d, body = %s", w.Code, w.Body.String())
+	cron("ok")
+	if doc, err := svc.Document(t.Context()); err != nil || len(doc.Books) != 1 {
+		t.Errorf("ok: books = %+v, err = %v, want the refresh saved", doc.Books, err)
 	}
 
-	books.err = errors.New("goodreads is down")
-	if w := cron(); w.Code != http.StatusBadGateway || !strings.Contains(w.Body.String(), "goodreads is down") {
-		t.Errorf("failure: status = %d, body = %s", w.Code, w.Body.String())
+	books.err = errors.New("anilist: 429 Too Many Requests")
+	cron("failure")
+	if got := logs.FilterMessage("refresh source failed").FilterField(zap.String("error", books.err.Error())).Len(); got != 1 {
+		t.Errorf("failure: logged %d source errors, want 1: %+v", got, logs.All())
 	}
 
 	svc.running.Lock()
 	defer svc.running.Unlock()
-	if w := cron(); w.Code != http.StatusConflict {
-		t.Errorf("busy: status = %d, want 409", w.Code)
+	cron("busy")
+	if got := logs.FilterMessage("refresh already running").Len(); got != 1 {
+		t.Errorf("busy: logged %d busy messages, want 1", got)
 	}
 }
