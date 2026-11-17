@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
@@ -16,13 +17,16 @@ import (
 	"go.icco.me/anilist"
 	"go.icco.me/gutil/etag"
 	"go.icco.me/gutil/logging"
+	"go.icco.me/gutil/tracing"
 	"go.icco.me/likes/lib/likes"
 	"go.icco.me/likes/lib/sources"
 	"go.icco.me/trakt"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.uber.org/zap"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
+	gormtracing "gorm.io/plugin/opentelemetry/tracing"
 )
 
 const service = "likes"
@@ -33,11 +37,26 @@ func main() {
 	ctx, stop := signal.NotifyContext(logging.NewContext(context.Background(), log), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	shutdownTracing, err := tracing.Init(ctx, service)
+	if err != nil {
+		log.Fatalw("initialize tracing", zap.Error(err))
+	}
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := shutdownTracing(shutdownCtx); err != nil {
+			log.Warnw("shutdown tracing", zap.Error(err))
+		}
+	}()
+
 	db, err := openDB(os.Getenv("DATABASE_URL"))
 	if err != nil {
 		log.Fatalw("open database", zap.Error(err))
 	}
-	svc, err := likes.New(ctx, db, configuredSources(os.Getenv, &http.Client{Timeout: 30 * time.Second}))
+	svc, err := likes.New(ctx, db, configuredSources(os.Getenv, &http.Client{
+		Transport: otelhttp.NewTransport(http.DefaultTransport),
+		Timeout:   30 * time.Second,
+	}))
 	if err != nil {
 		log.Fatalw("start", zap.Error(err))
 	}
@@ -72,7 +91,14 @@ func openDB(dsn string) (*gorm.DB, error) {
 	if dsn == "" {
 		return nil, errors.New("DATABASE_URL is required")
 	}
-	return gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	if err != nil {
+		return nil, err
+	}
+	if err := db.Use(gormtracing.NewPlugin(gormtracing.WithoutMetrics(), gormtracing.WithoutQueryVariables())); err != nil {
+		return nil, fmt.Errorf("register tracing plugin: %w", err)
+	}
+	return db, nil
 }
 
 func getenv(key, fallback string) string {
@@ -110,5 +136,9 @@ func router(svc *likes.Service, log *zap.Logger) http.Handler {
 	r.Use(logging.Middleware(log))
 	r.With(etag.Handler(false)).Get("/", svc.ServeLikes)
 	r.Get("/cron", svc.ServeCron)
-	return r
+	return otelhttp.NewHandler(r, service,
+		otelhttp.WithFilter(func(req *http.Request) bool {
+			return req.URL.Path != "/metrics" && req.URL.Path != "/healthz"
+		}),
+	)
 }
