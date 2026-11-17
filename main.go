@@ -71,7 +71,9 @@ func main() {
 		Handler:           router(svc, log.Desugar()),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
+	shutdownDone := make(chan struct{})
 	go func() {
+		defer close(shutdownDone)
 		<-ctx.Done()
 		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 		defer cancel()
@@ -83,6 +85,7 @@ func main() {
 	if err := srv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
 		log.Fatalw("serve", zap.Error(err))
 	}
+	<-shutdownDone
 }
 
 // openDB connects to Postgres. Queries log nothing themselves; callers log the
