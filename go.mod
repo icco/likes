@@ -4,9 +4,9 @@ go 1.27.3
 
 require (
 	charm.land/bubbletea/v2 v2.1.1
-	charm.land/lipgloss/v2 v2.0.6
+	charm.land/lipgloss/v2 v2.1.1
 	github.com/go-chi/chi/v5 v5.5.0
-	go.icco.me/anilist v1.2.1
+	go.icco.me/anilist v1.2.2
 	go.icco.me/gutil v1.1.0
 	go.icco.me/trakt v1.1.1
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.72.0
